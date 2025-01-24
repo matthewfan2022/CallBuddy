@@ -44,32 +44,20 @@ app.post('/call', async (req, res) => {
             from: twilioPhoneNumber,
             twiml: `<Response>
                         <Say>Hello! I will transcribe your audio in real-time.</Say>
-                        
+                        <Start>
+                            <Stream url="wss://1cdb-128-62-40-57.ngrok-free.app/ws" track="inbound_track" />
+                        </Start>
+                        <Pause length="30" />
+                        <Say>Sorry, the transcription service is unavailable right now.</Say>
                     </Response>`,
         });
-        // <Start>
-        //                     <Stream url="wss://your-server-url/ws" track="inbound_track" />
-        //                 </Start>
+        
 
         res.status(200).json({ message: 'Call initiated', callSid: call.sid });
     } catch (error) {
         console.error('Error making call:', error);
         res.status(500).json({ error: 'Failed to make the call' });
     }
-});
-
-// Handle the transcribed speech
-app.post('/handle_speech', async (req, res) => {
-    const transcription = req.body.SpeechResult; // This is the transcribed text
-    console.log(`User said: ${transcription}`);
-
-    const twiml = new twilio.twiml.VoiceResponse();
-
-    // Repeat back what the user said
-    twiml.say(`${transcription}`);
-
-    res.type('text/xml');
-    res.send(twiml.toString());
 });
 
 // Start Server
