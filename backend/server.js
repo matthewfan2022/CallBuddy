@@ -38,17 +38,19 @@ app.post('/call', async (req, res) => {
 
     console.log(`Prompt received: ${promptText}`); // Log the promptText
 
+    //const encodedPromptText = encodeURIComponent(promptText); // Encode to make it URL-safe
+    const websocketUrl = `wss://1cdb-128-62-40-57.ngrok-free.app/ws`;
+
     try {
         const call = await client.calls.create({
             to: phoneNumber,
             from: twilioPhoneNumber,
             twiml: `<Response>
-                        <Say>Hello! I will transcribe your audio in real-time.</Say>
                         <Start>
-                            <Stream url="wss://1cdb-128-62-40-57.ngrok-free.app/ws" track="inbound_track" />
+                            <Stream url="${websocketUrl}" track="inbound_track" />
                         </Start>
-                        <Pause length="30" />
-                        <Say>Sorry, the transcription service is unavailable right now.</Say>
+                        <Pause length="300" />
+                        <Say>Ending call.</Say>
                     </Response>`,
         });
         
@@ -58,6 +60,16 @@ app.post('/call', async (req, res) => {
         console.error('Error making call:', error);
         res.status(500).json({ error: 'Failed to make the call' });
     }
+
+    const ws = new WebSocket(websocketUrl);
+
+    ws.onopen = () => {
+        // Send `promptText` as a message once WebSocket connection is open
+        const promptMessage = JSON.stringify({ type: 'promptText', text: promptText });
+        ws.send(promptMessage);
+        ws.close();
+    };
+    
 });
 
 // Start Server
