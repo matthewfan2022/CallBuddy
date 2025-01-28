@@ -46,10 +46,10 @@ app.post('/call', async (req, res) => {
             to: phoneNumber,
             from: twilioPhoneNumber,
             twiml: `<Response>
-                        <Start>
+                        <Connect>
                             <Stream url="${websocketUrl}" track="inbound_track" />
-                        </Start>
-                        <Pause length="300" />
+                        </Connect>
+                        
                         <Say>Ending call.</Say>
                     </Response>`,
         });
