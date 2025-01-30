@@ -12,7 +12,7 @@ const keyFilePath = 'callbuddy-448720-755f8cd59efd.json';
 const portNumber = 5002;
 
 //"deepseek-chat" or "gpt-3.5-turbo"
-const LLMModel = 'deepseek-chat';
+const LLMModel = 'gpt-3.5-turbo';
 
 // OpenAI API Configuration
 openai = null;
@@ -54,7 +54,7 @@ console.log('WebSocket server is running on ws://localhost:'+portNumber.toString
 stream_sid = null;
 const conversationHistory = [];
 
-const remainingPrompt = "Your tone should be cordial. You are handling a phone call for me. I will tell you what the other person says and you ONLY should provide a response from my perspective, nothing else. If you get a message that is very short and does not make sense in the context, respond with sorry i didn't get that do you mind repeating that. "
+const remainingPrompt = "You are handling a phone call for me. I will tell you what the other person says and you ONLY should provide a response from my perspective, nothing else. If something does not make sense, respond with sorry can you repeat that. If you need to press a number pad key, output number in between astericks e.g. *1*. If the conversation ends and you are going to hang up, output *XXX*."
 
 // Handle WebSocket connections
 wss.on('connection', (ws, req) => {
@@ -94,9 +94,13 @@ wss.on('connection', (ws, req) => {
                     // Add GPT's response to the conversation history
                     conversationHistory.push({ role: "assistant", content: assistantResponse });
 
+                    const result = extractAndRemoveAsterisks(assistantResponse);
+
+                    sendKeyPressesToTwilio(result.actions, ws);
+
                     // Generate the audio stream from Eleven Labs
                     const audioStream = await eleven_labs_client.textToSpeech.convert(voiceId, {
-                        text: assistantResponse,
+                        text: result.message,
                         model_id: 'eleven_multilingual_v2',
                         output_format: outputFormat,
                     });
@@ -111,6 +115,11 @@ wss.on('connection', (ws, req) => {
                             payload: Buffer.from(audioArrayBuffer).toString('base64'),
                         },
                     }));
+
+                    if (result.actions.includes(x = "XXX")) {
+                        console.log(`"${x}" found in extracted strings. Closing WebSocket.`);
+                        ws.close();
+                    } 
                     
                 } catch (error) {
                     console.error('Error communicating with GPT:', error);
@@ -128,7 +137,8 @@ wss.on('connection', (ws, req) => {
             } else if (parsed.type === 'promptText' && parsed.text) {
                 const promptText = parsed.text; // Save the prompt text for future use
                 console.log(`Received promptText: ${promptText}`);
-                const initialPrompt = `Your goal is: ${promptText}. ${remainingPrompt}`;
+                const initialPrompt = `${remainingPrompt} Your goal is: ${promptText}. `;
+                console.log(initialPrompt);
                 conversationHistory.push({ role: "system", content: initialPrompt });
             } else if (parsed.event === 'media' && parsed.media && parsed.media.payload) {
                 const audioChunk = Buffer.from(parsed.media.payload, 'base64'); // Decode base64 payload
@@ -142,7 +152,27 @@ wss.on('connection', (ws, req) => {
     });
 
     // Handle any remaining audio when the connection closes
-    ws.on('close', () => {
+    ws.on('close', async () => { 
+        try {
+            if (conversationHistory.length > 1) {
+                conversationHistory.push({ role: "user", content: "Summarize this conversation." });
+    
+                const gptResponse = await openai.chat.completions.create({
+                    model: LLMModel, 
+                    messages: conversationHistory,
+                });
+    
+                if (!gptResponse || !gptResponse.choices || gptResponse.choices.length === 0) {
+                    throw new Error('GPT response is empty or invalid');
+                }
+    
+                const assistantResponse = gptResponse.choices[0].message.content;
+                console.log('Call Summary:', assistantResponse);
+            }
+        } catch (error) {
+            console.error('Error generating conversation summary:', error);
+        }
+    
         console.log('WebSocket connection closed');
         recognizeStream.end();
     });
@@ -159,4 +189,37 @@ wss.on('connection', (ws, req) => {
           readableStream.on('error', reject); // Handle stream errors
         });
       }
+    
+    function extractAndRemoveAsterisks(str) {
+        const matches = [];
+        const updatedStr = str.replace(/\*(.*?)\*/g, (_, match) => {
+            matches.push(match); // Capture the content between asterisks
+            return ''; // Remove the match from the string
+        });
+    
+        return {
+            actions: matches,
+            message: updatedStr.trim(),
+        };
+    }
+
+    function sendKeyPressesToTwilio(actions, ws) {
+        actions.forEach(action => {
+            // Check if the action is a valid single-digit number
+            if (/^[0-9]$/.test(action)) {
+                // Send the number as a DTMF tone through the WebSocket
+                ws.send(JSON.stringify({
+                    event: "dtmf",
+                    streamSid: stream_sid, // Replace with your actual Stream SID
+                    dtmf: {
+                        digits: action
+                    }
+                }));
+                console.log(`Sent key press: ${action}`);
+            } else {
+                console.log(`Skipped: ${action} is not a valid single-digit number.`);
+            }
+        });
+    }
+
 });

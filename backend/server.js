@@ -14,10 +14,7 @@ app.use(bodyParser.json());
 const accountSid = process.env.TWILIO_ACCOUNT_SID; // Your Twilio Account SID
 const authToken = process.env.TWILIO_AUTH_TOKEN;   // Your Twilio Auth Token
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER; // Your Twilio phone number
-
 const client = twilio(accountSid, authToken);
-
-
   
 // Test Endpoint
 app.get('/', (req, res) => {
@@ -38,7 +35,6 @@ app.post('/call', async (req, res) => {
 
     console.log(`Prompt received: ${promptText}`); // Log the promptText
 
-    //const encodedPromptText = encodeURIComponent(promptText); // Encode to make it URL-safe
     const websocketUrl = `wss://1cdb-128-62-40-57.ngrok-free.app/ws`;
 
     try {
@@ -49,8 +45,7 @@ app.post('/call', async (req, res) => {
                         <Connect>
                             <Stream url="${websocketUrl}" track="inbound_track" />
                         </Connect>
-                        
-                        <Say>Ending call.</Say>
+                        <Pause length="5"/>
                     </Response>`,
         });
         
